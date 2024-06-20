@@ -2,11 +2,22 @@
 \label{ch:codelabs}
 
 Codelabs is a cloud-based code autograder.  To set it up, you will
-need a Docker file for your grading environment.  That is pretty much
-all.  In terms of the Autograder setup, CodeLabs is compatible with
-Autolab and you can use your Autolab autograders and Make files as is.
+need a \verb|Dockerfile| that provides necessary tools and software for your grading environment.  
+In terms of the Autograder setup, Codelabs is compatible with
+Autolab and you can use your Autolab autograders and \verb|Makefile|s as is.
 
-The features of Codelabs include
+The general flow involves creating a \verb|Makefile| that invokes lab-specific
+grading tools. These tools have access to the handin code from the student and
+a tarball that includes any necessary support code. How this works is that for
+each student lab submission, a fresh container is created in the cloud
+(according to the instructor-provided \verb|Dockerfile|). That container
+invokes a grading scripts that ultimately runs \verb|make| using the
+aforementioned \verb|Makefile|. As long as you provide a valid \verb|make|
+target, you can have the \verb|Makefile| do whatever you'd like, for example
+invoke some other scripts, or invoke \textit{another} \verb|Makefile| in the
+student's handin directory. 
+
+The features of Codelabs include:
 \begin{itemize}
 \item  
 \textbf{manual grading:} allowing course staff to review code and leave comments and point
@@ -17,56 +28,74 @@ score on them,
 requests and course staff to respond to them
 
 \item
-  \textbf{submission management:} reviewing, rerunning/resubmitting submissions
+  \textbf{submission management:} creating, reviewing, rerunning/resubmitting, and deleting submissions
 
 \item
-  \textbf{grade management:} viewing, downloading grades, and exporting them to gradebook.
+  \textbf{grade management:} viewing, downloading grades, and exporting them to the gradebook.
 \end{itemize}
 %
 Please see the video above by Ria Pradeep of Carnegie Mellon University for a brief tutorial on Codelabs.
 
-In addition to serving as a standalone auto-grader, codelabs, can also
+In addition to serving as a standalone auto-grader, codelabs can also
 be used to provide automatic feedback to the students.
 %
 In this ``chapter-grader'' mode, the CodeLab is coupled with a submittable
 (quiz) chapter.
 %
-When a student makes a submission on the chapter, the (coupled) CodeLab is invoked with the answers of the student.
+When a student makes a submission on the chapter, the (coupled) Codelab is invoked with the answers of the student.
 
 \section{Standalone Mode}
 \label{sec:codelabs::standalone}
 
 \begin{gram}[Lab Setup]
-You can specify various properties for the lab such as the deadlines, and other properties.  These should be self explanatory.  A couple of things to note
-
-
+You can specify various properties for the lab such as deadlines, release dates, and other properties.  These should be self explanatory.  A couple of things to note:
 \begin{itemize}
-\item \textbf{Assignment date} specifies the date for when the lab is assigned.  Diderot sorts  labs based on their assignment date.
+\item \textbf{Publication date} specifies the date when the lab becomes available to students.  Diderot sorts labs based on this date.
 \item \textbf{Handout} file can be of any type, e.g., a pdf, a tar ball, a compressed tar ball, etc.
 \end{itemize}
+\end{gram}
 
+\begin{gram}|Grading tab|
+Here are some things you will have to set up for the autograder under the ``Grading'' tab
+    \begin{itemize}
+        \item \textbf{Uses Autograder?} should be set to ``Yes''
+        \item \textbf{Autograder} currently represents a job queue on the cloud to which student submissions will be enqueued. 
+            The Diderot admins will help you select an option here. 
+        \item \textbf{Makefile} is the top-level \verb|Makefile| that you will provide to handle the student submissions and invoke
+            any lab-specific grading tools. 
+        \item \textbf{Autograde TAR} contains any extra code, files, or other data necessary for grading that isn't already present
+            in a student's submission tarball. 
+    \end{itemize}
+Note that the Autograde TAR, the \verb|Makefile|, and the student's submitted tarball (\verb|handin.tgz|) will
+all be instantiated in the same top-level directory of the submission container when it runs. 
 \end{gram}
 
 \begin{gram}[Autograder output format]
 \label{sec:codelabs::standalone::output}
 
-In the standalone mode, the autograder is expected to some output ending with a JSON string mapping problem names (as defined in the Grading tab) to the scores for that student, e.g.,
+In standalone mode, the autograder expects output \textbf{ending} with
+a well-formed JSON string that maps problem names (as defined in the
+    Grading tab) to the earned scores (not total possible points) for that student. For example,
+    below is the output of grading a lab with three problems:
   
 \begin{lstlisting}
 {
   "scores":
-  {"Shortest path": 5.0, "Longest path": 7.0, "Widest path": 15.0}
+  {"ShortestPath": 5.0, "LongestPath": 7.0, "WidestPath": 15.0}
 }
 \end{lstlisting}
 
+Anything printed by grading code before this JSON string will be ignored by the
+grader, but will be retained in the submission log visible to students. 
+You should avoid using special characters in problem names.
 If the scoreboard is turned on and you would like to display a list of
-submissions based on their score, include in the autograder aboutput a \lstinline`scoreboard` field, e.g.,
+submissions based on their score, your autograder's output should also include a \lstinline`scoreboard` key, e.g.,
 
 
 \begin{lstlisting}
 {
   "scores":
-  {"Shortest path": 5.0, "Longest path": 7.0, "Widest path": 15.0},
+  {"ShortestPath": 5.0, "LongestPath": 7.0, "WidestPath": 15.0},
   "scoreboard": 
   7.0  
 }
@@ -88,16 +117,90 @@ scores for that submission, e.g.,
 \begin{lstlisting}
 {
   "problems":
-    {"Shortest path": 10.0,
-      "Longest path": 15.0
+    {"ShortestPath": 10.0,
+      "LongestPath": 15.0
     },
   "scores":
-    {"Shortest path": 5.0,
-      "Longest path": 7.0}
+    {"ShortestPath": 5.0,
+      "LongestPath": 7.0}
 }
 \end{lstlisting}
 
-The \lstinline`"problems"` key maps each problem to its point value.
+The \lstinline`"problems"` key maps each problem to its total point value. Note
+that possible point values do \textbf{not} need to sum to any particular number (e.g., 100).
 The \lstinline`"scores"` key maps each problem to the score for that submission.
-The problem as defined will determine the columns of the gradetable.
+The problem as defined will determine the columns of the grade table.
 \end{gram}
+
+\section{Example}
+\label{sec:codelabs::example}
+
+In this example, students hand in a tarball of a codebase they've completed for
+a lab. Diderot automatically names this file \verb|handin.tgz|. Here, the
+student codebase contains its \textit{own} \verb|Makefile| with a \verb|grade|
+target that runs some tests against their code. Because we do not want students
+to modify the scripts invoked by the \verb|grade| target, we provide them
+separately from the student's codebase in an instructor-provided archive
+(\verb|autograde.tar|). This archive is uploaded at the lab configuration page
+(under the ``Grading'' tab).
+
+\begin{verbatim}
+.PHONY: all
+
+all: 
+	@if mkdir handin && tar -xzf handin.tgz -C handin/ ; \
+		then \
+			tar -xf autograde.tar -C handin/ ; \
+			$(MAKE) --directory=handin --no-print-directory grade DIDEROT_UUID=$(DIDEROT_UUID); \
+	else\
+		echo "Incorrectly formatted handin archive" ; \
+	fi ;
+\end{verbatim}
+
+This main target of this \verb|Makefile| is invoked by Diderot after
+instantiating a new container for the student's submission. In this
+\verb|Makefile|, we extract the student's code into a new directory, and place
+the golden copy of our instructor grading tools in \verb|autograde.tar| in the
+new directory as well. We then use recursive \verb|make| to run \verb|make
+grade| inside the student's codebase. Note that this \verb|Makefile| could have
+skipped the second \verb|make| step and invoked some other form of grading
+scheme, e.g., a set of python scripts. 
+
+\section{Tips}
+\label{sec:codelabs::tips}
+
+Here are a few tips:
+\begin{itemize}
+    \item If your grading code relies on time, e.g. for timeout detection or 
+        performance measurements, be liberal with the time provided. The student's code will
+        run within a resource-constrained container in the cloud on a resource-constrained virtual machine
+        (though the latter can be adjusted). There is also a high probability that during periods
+        of high activity (for example, close to the submission deadline), student submissions
+        will run slower due to resource contention. 
+
+    \item If you have any tests, tools, or grading data that a student should \textbf{not} be able to see,
+        but is necessary for grading, you'll want to put that in your \verb|autograde.tar|. 
+
+    \item It is probably better to keep the top-level lab \verb|Makefile| simple, and push complexity out
+        to more specialized grading scripts. 
+
+    \item You can create your own submissions as an instructor or a TA. This is convenient for testing lab submissions
+        and grading infrastructure before releasing a lab. 
+
+    \item Students can submit their labs manually on the Diderot Web UI. However, you can also use the Diderot command-line tools to make it easier for students to submit code on Diderot. For example,
+        if the student's code includes a \verb|Makefile|, you can include a \verb|handin| make target that invokes
+        \verb|diderot-cli| with the student's credentials to submit a lab to Diderot. Such a \verb|make| target might look something like this:
+
+        \begin{verbatim}
+        handin: tarball
+            python3 $(DID_CLI_DIR)/diderot student -c $(DID_CRED_FILE) submit-assignment $(DID_COURSE_LABEL) $(DID_LAB_LABEL) handin.tar.gz \
+            || { \
+            echo ; \
+            echo "Submit seems to have failed."; \
+            echo "Please make sure your credentials (diderot-creds) are correct. Otherwise, submit the tarball manually on Diderot."; }
+        \end{verbatim}
+        Here \verb|DID_CLI_DIR| is a variable holding the directory name where I've cloned the \href{https://github.com/diderot-edu/diderot-cli}{diderot-cli} repo. 
+        \verb|DID_CRED_FILE| contains the student's credentials (username/password), \verb|DID_COURSE_LABEL| is the course label listed
+        under ``Course Settings'', and \verb|DID_LAB_LABEL| is the lab title I provided when creating the lab. 
+
+\end{itemize}
